@@ -284,6 +284,13 @@ def clean_phone(phone):
     if not phone: return None
     return phone.replace('+', '').replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
 
+def format_phone_display(phone):
+    if not phone: return "Yo'q"
+    phone = str(phone).replace('+', '').replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+    if len(phone) == 9:
+        return f"+998{phone}"
+    return f"+{phone}"
+
 # -----------------------------------------------------------------------------
 # STATES & KEYBOARDS
 # -----------------------------------------------------------------------------
@@ -307,6 +314,13 @@ class Form(StatesGroup):
     
     # Search
     search_query = State()
+    
+    # Broadcast
+    broadcast_msg = State()
+
+    # Seller Message
+    seller_msg_target = State()
+    seller_msg_content = State()
 
 role_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="👨‍💼 Sotuvchi"), KeyboardButton(text="👤 Haridor")]], resize_keyboard=True)
 shop_choice_kb = ReplyKeyboardMarkup(keyboard=[
@@ -347,7 +361,8 @@ cabinet_kb = ReplyKeyboardMarkup(keyboard=[
 
 owner_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="👨‍💼 Sotuvchilar Ro'yxati"), KeyboardButton(text="👤 Haridorlar Ro'yxati")],
-    [KeyboardButton(text="🚫 Sotuvchini bloklash bo'limi"), KeyboardButton(text="📊 Hisobotlar")]
+    [KeyboardButton(text="🚫 Sotuvchini bloklash bo'limi"), KeyboardButton(text="📊 Hisobotlar")],
+    [KeyboardButton(text="✉️ Sotuvchiga xabar"), KeyboardButton(text="📢 Xabar yuborish")]
 ], resize_keyboard=True)
 
 block_menu_kb = ReplyKeyboardMarkup(keyboard=[
@@ -561,8 +576,9 @@ async def save_c_phone(msg: Message, state: FSMContext):
     res = await db_add_customer(seller_id, data['name'], phone, linked_tg_id)
     
     link_status = "🔗 (Botga ulangan)" if linked_tg_id else "⚪️ (Botga ulanmagan)"
+    phone_f = format_phone_display(phone)
     if res:
-        await msg.answer(f"✅ Mijoz qo'shildi!\n👤 <b>{data['name']}</b>\n📞 {phone}\n{link_status}", reply_markup=seller_kb, parse_mode="HTML")
+        await msg.answer(f"✅ Mijoz qo'shildi!\n👤 <b>{data['name']}</b>\n📞 {phone_f}\n{link_status}", reply_markup=seller_kb, parse_mode="HTML")
     else:
         await msg.answer("⚠️ Bu mijoz allaqachon mavjud.", reply_markup=seller_kb)
     await state.clear()
@@ -696,7 +712,7 @@ async def check_show(call: CallbackQuery):
     
     text = f"👤 <b>MIJOZ KARTOCHKASI</b>\n\n"
     text += f"🏷 <b>Ism:</b> {cust[1]}\n"
-    text += f"📞 <b>Tel:</b> {cust[2]}\n"
+    text += f"📞 <b>Tel:</b> {format_phone_display(cust[2])}\n"
     
     balance_status = "� QARZDOR" if cust[3] > 0 else "🟢 QARZI YO'Q" if cust[3] == 0 else "🔵 HAQDOR"
     text += f"�💰 <b>Holat:</b> {balance_status}\n"
@@ -897,7 +913,7 @@ async def member_show(call: CallbackQuery):
         await call.answer("Mijoz topilmadi")
         return
     info = (f"👤 <b>Ism:</b> {cust[1]}\n"
-            f"📞 <b>Tel:</b> {cust[2]}\n"
+            f"📞 <b>Tel:</b> {format_phone_display(cust[2])}\n"
             f"💰 <b>Balans:</b> {cust[3]:,.0f} so'm\n"
             f"🔗 <b>Telegram ulangan:</b> {'✅' if cust[4] else '❌'}")
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -957,7 +973,7 @@ async def show_sellers_list(msg: Message):
     text = f"🏪 <b>Sotuvchilar Ro'yxati ({len(sellers)}):</b>\n\n"
     for idx, s in enumerate(sellers, 1):
         # s: telegram_id, full_name, username, phone, created_at, store_name
-        tg_username = f"@{s[2]}" if s[2] else "Yo'q"
+        phone_f = format_phone_display(s[3])
         status = "🟢"
         row_text = (f"{idx}. {status} <b>{s[1]}</b>\n"
                     f"   ID: <code>{s[0]}</code> | 🏠 {s[5]}\n")
@@ -965,7 +981,7 @@ async def show_sellers_list(msg: Message):
         
         # Add Block button for each
         kb.inline_keyboard.append([
-            InlineKeyboardButton(text=f"🚫 Bloklash: {s[1]}", callback_data=f"preblock_{s[0]}")
+            InlineKeyboardButton(text=f"🚫 Bloklash", callback_data=f"preblock_{s[0]}")
         ])
     
     await msg.answer(text, parse_mode="HTML", reply_markup=kb)
@@ -983,10 +999,11 @@ async def show_buyers_list(msg: Message):
     for idx, b in enumerate(buyers, 1):
          # b: telegram_id, full_name, username, phone, created_at, store_name
         tg_username = f"@{b[2]}" if b[2] else "Yo'q"
+        phone_f = format_phone_display(b[3])
         text += (f"🆔 <b>ID:</b> <code>{b[0]}</code>\n"
                  f"👤 <b>Ism:</b> {b[1]}\n"
                  f"🔗 <b>Username:</b> {tg_username}\n"
-                 f"📞 <b>Tel:</b> {b[3]}\n"
+                 f"📞 <b>Tel:</b> {phone_f}\n"
                  f"🕒 <b>Sana:</b> {b[4]}\n"
                  f"➖➖➖➖➖➖➖➖\n")
 
@@ -1041,10 +1058,11 @@ async def show_blocked_list(msg: Message):
     
     for idx, b in enumerate(blocked, 1):
         tg_username = f"@{b[2]}" if b[2] else "Yo'q"
+        phone_f = format_phone_display(b[3])
         text += (f"🆔 <b>ID:</b> <code>{b[0]}</code>\n"
                  f"👤 <b>Ism:</b> {b[1]}\n"
                  f"🔗 <b>Username:</b> {tg_username}\n"
-                 f"📞 <b>Tel:</b> {b[3]}\n"
+                 f"📞 <b>Tel:</b> {phone_f}\n"
                  f"➖➖➖➖➖➖➖➖\n")
         
         # Add unblock button for each user
@@ -1140,9 +1158,10 @@ async def show_cabinet_staff(msg: Message):
     
     for s in staff:
         tg_username = f"@{s[2]}" if s[2] else "Yo'q"
+        phone_f = format_phone_display(s[3])
         text += (f"👤 <b>Ism:</b> {s[1]}\n"
                  f"🔗 <b>Username:</b> {tg_username}\n"
-                 f"📞 <b>Tel:</b> {s[3]}\n"
+                 f"📞 <b>Tel:</b> {phone_f}\n"
                  f"🕒 <b>Ulandi:</b> {s[4]}\n"
                  f"➖➖➖➖➖➖➖➖\n")
         kb.inline_keyboard.append([InlineKeyboardButton(text=f"❌ Chiqarib yuborish: {s[1]}", callback_data=f"kick_{s[0]}")])
@@ -1298,7 +1317,7 @@ async def my_debts(msg: Message):
             seller_phone_res = await db.execute("SELECT u.phone FROM customers c JOIN users u ON c.seller_id = u.telegram_id WHERE c.id = ?", (cust_id,))
             async with seller_phone_res as cur:
                 s_row = await cur.fetchone()
-                store_contact = s_row[0] if s_row and s_row[0] else "Mavjud emas"
+                store_contact = format_phone_display(s_row[0]) if s_row and s_row[0] else "Mavjud emas"
             status = "🔴 Qarz" if balance > 0 else "🟢 Haq"
             text += f"🏪 <b>{store_name}</b>\n"
             text += f"📞 Aloqa: {store_contact}\n"
@@ -1459,6 +1478,85 @@ async def main():
     asyncio.create_task(scheduler(bot))
     print("Bot v8.3 (Clean Rebuild) ishga tushdi...")
     await dp.start_polling(bot)
+
+@router.message(F.text == "📢 Xabar yuborish")
+async def broadcast_start(msg: Message, state: FSMContext):
+    is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
+    if not is_owner: return
+    await msg.answer("📢 Barcha foydalanuvchilarga yuboriladigan xabarni kiriting (Rasm, Video yoki Matn):", reply_markup=cancel_kb)
+    await state.set_state(Form.broadcast_msg)
+
+@router.message(Form.broadcast_msg)
+async def broadcast_send(msg: Message, state: FSMContext, bot: Bot):
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT telegram_id FROM users") as cur:
+            users = await cur.fetchall()
+    
+    count = 0
+    status_msg = await msg.answer("⏳ Xabar yuborilmoqda...")
+    for u in users:
+        try:
+            if msg.text:
+                await bot.send_message(u[0], msg.text)
+            elif msg.photo:
+                await bot.send_photo(u[0], msg.photo[-1].file_id, caption=msg.caption)
+            elif msg.video:
+                await bot.send_video(u[0], msg.video.file_id, caption=msg.caption)
+            count += 1
+            await asyncio.sleep(0.05)
+        except:
+            pass
+    
+    await status_msg.delete()
+    await msg.answer(f"✅ Xabar {count} ta foydalanuvchiga muvaffaqiyatli yuborildi!", reply_markup=owner_kb)
+    await state.clear()
+
+@router.message(F.text == "✉️ Sotuvchiga xabar")
+async def seller_msg_start(msg: Message, state: FSMContext):
+    is_owner = msg.from_user.id in ADMINS or (msg.from_user.username in ADMIN_USERNAMES)
+    if not is_owner: return
+    
+    sellers = await db_get_users_by_role('admin')
+    if not sellers:
+        await msg.answer("Sotuvchilar yo'q.")
+        return
+        
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
+    for s in sellers:
+        # s: telegram_id, full_name, ...
+        kb.inline_keyboard.append([InlineKeyboardButton(text=f"✉️ {s[1]} ({s[5]})", callback_data=f"selmsg_{s[0]}")])
+    
+    await msg.answer("Qaysi sotuvchiga xabar yubormoqchisiz?", reply_markup=kb)
+
+@router.callback_query(F.data.startswith("selmsg_"))
+async def seller_msg_sel(call: CallbackQuery, state: FSMContext):
+    target_id = int(call.data.split("_")[1])
+    await state.update_data(target=target_id)
+    await call.message.delete()
+    await call.message.answer("Sotuvchi uchun xabarni kiriting (Matn/Rasm/Video):", reply_markup=cancel_kb)
+    await state.set_state(Form.seller_msg_content)
+
+@router.message(Form.seller_msg_content)
+async def seller_msg_send(msg: Message, state: FSMContext, bot: Bot):
+    d = await state.get_data()
+    target_id = d['target']
+    
+    try:
+        prefix = "✉️ <b>ADMINSTRATORdan Xabar:</b>\n\n"
+        if msg.text:
+            await bot.send_message(target_id, prefix + msg.text, parse_mode="HTML")
+        elif msg.photo:
+            await bot.send_photo(target_id, msg.photo[-1].file_id, caption=prefix + (msg.caption or ""), parse_mode="HTML")
+        elif msg.video:
+            await bot.send_video(target_id, msg.video.file_id, caption=prefix + (msg.caption or ""), parse_mode="HTML")
+        elif msg.voice:
+            await bot.send_voice(target_id, msg.voice.file_id, caption=prefix + "Ovozli xabar", parse_mode="HTML")
+            
+        await msg.answer("✅ Xabar sotuvchiga yuborildi!", reply_markup=owner_kb)
+    except Exception as e:
+        await msg.answer(f"❌ Xabar yuborishda xatolik: {e}", reply_markup=owner_kb)
+    
+    await state.clear()
 
 if __name__ == "__main__":
     try: 
