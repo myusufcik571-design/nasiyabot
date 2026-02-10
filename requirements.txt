@@ -1,0 +1,5 @@
+aiogram>=3.0
+aiosqlite
+openpyxl
+python-dotenv
+flask
